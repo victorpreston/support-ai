@@ -15,6 +15,6 @@ jest.mock('next/navigation', () => ({
 describe('Home Page', () => {
   it('renders without crashing', () => {
     render(<Page />)
-    expect(screen.getByRole('main')).toBeInTheDocument()
+    expect(screen.getByText('Transform Support into a')).toBeInTheDocument()
   })
 })
