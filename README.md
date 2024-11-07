@@ -4,12 +4,12 @@ A modern AI-powered customer support platform built with Next.js, TypeScript, an
 
 ## Features
 
-- 🤖 AI-powered chatbot
-- 📊 Analytics dashboard
-- 💬 Conversation management
-- 📚 Knowledge base
-- ⚙️ AI configuration panel
-- 📈 Performance monitoring
+- AI-powered chatbot
+- Analytics dashboard
+- Conversation management
+- Knowledge base
+- AI configuration panel
+- Performance monitoring
 
 ## Getting Started
 
