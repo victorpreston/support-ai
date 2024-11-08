@@ -6,20 +6,36 @@ import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Bot, Send, User, Paperclip, Mic, ThumbsUp, ThumbsDown } from "lucide-react"
-import { useChat } from "ai/react"
+import { useChat } from "@ai-sdk/react"
 
 export default function ChatPage() {
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
+  const { messages, sendMessage, status, error } = useChat({
     api: "/api/chat",
   })
 
+  const [input, setInput] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [showFeedback, setShowFeedback] = useState<Record<string, boolean>>({})
+
+  const isLoading = status === "loading"
 
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInput(e.target.value)
+  }
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!input.trim() || isLoading) return
+    
+    const message = input
+    setInput("")
+    sendMessage(message)
+  }
 
   const handleFeedback = (messageId: string, isPositive: boolean) => {
     // In a real app, you would send this feedback to your API
@@ -184,7 +200,7 @@ export default function ChatPage() {
             <Button type="button" variant="ghost" size="icon">
               <Mic className="h-5 w-5" />
             </Button>
-            <Button type="submit" size="icon" disabled={isLoading || !input.trim()}>
+            <Button type="submit" size="icon" disabled={isLoading || !input?.trim()}>
               <Send className="h-5 w-5" />
             </Button>
           </form>
