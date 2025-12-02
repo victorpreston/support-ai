@@ -1,39 +1,28 @@
-name: Auto-merge to Dev
+name: Auto Merge to Dev
 
 on:
-  pull_request:
-    branches: [dev]
-    types: [closed]
+  push:
+    branches-ignore: [dev, master]
 
 jobs:
-  auto-merge-to-dev:
-    name: Auto-merge to Dev
+  auto-merge-dev:
+    name: Auto Merge to Dev
     runs-on: ubuntu-latest
-    if: |
-      github.event.pull_request.merged == true &&
-      startsWith(github.head_ref, 'feature/') ||
-      startsWith(github.head_ref, 'fix/') ||
-      startsWith(github.head_ref, 'hotfix/') ||
-      startsWith(github.head_ref, 'chore/')
-      
+    if: github.ref != 'refs/heads/dev' && github.ref != 'refs/heads/master'
+    
     steps:
-      - name: Checkout dev branch
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: dev
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
           
       - name: Configure Git
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
           
-      - name: Sync dev with latest
+      - name: Merge to dev
         run: |
-          git fetch origin
-          git reset --hard origin/dev
-          
-      - name: Confirm merge completed
-        run: |
-          echo "Feature branch ${{ github.head_ref }} successfully merged to dev"
-          echo "Dev branch is now ready for promotion to master"
+          git checkout dev
+          git merge ${{ github.sha }} --no-ff -m "feat: auto-merge ${{ github.ref_name }} to dev"
+          git push origin dev

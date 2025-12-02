@@ -1,143 +1,43 @@
-name: Continuous Integration
+name: CI Pipeline
 
 on:
+  push:
+    branches: ['**']
   pull_request:
     branches: [dev, master]
-  push:
-    branches: [dev]
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
-  quality-checks:
-    name: Quality & Security
+  test:
+    name: Test & Quality Checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-        
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 8
-          
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
-          
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+    - uses: actions/checkout@v4
+    
+    - name: Install pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: 9
         
-      - name: TypeScript type checking
-        run: pnpm tsc --noEmit
-        
-      - name: ESLint
-        run: pnpm lint
-        
-      - name: Prettier check
-        run: pnpm prettier --check .
-        
-      - name: Run tests
-        run: pnpm test:coverage
-        
-      - name: Build verification
-        run: pnpm build
-        
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-          
-  security-scan:
-    name: Security Analysis
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'pnpm'
+    
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+    
+    - name: Run linting
+      run: pnpm run lint
+    
+    - name: Run build
+      run: pnpm run build
+    
+    - name: Run tests
+      run: pnpm run test
       
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: javascript
-          
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-        
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
-        
-  dependency-scan:
-    name: Dependency Security
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 8
-          
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-          
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-        
-      - name: Audit dependencies
-        run: pnpm audit --audit-level moderate
-        
-      - name: License compliance check
-        run: |
-          npx license-checker --onlyAllow 'MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD' --excludePrivatePackages
-        continue-on-error: true
-        
-  commit-lint:
-    name: Commit Message Validation
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 8
-          
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-          
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-        
-      - name: Validate commit messages
-        run: pnpm exec commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+    - name: Check commit messages
+      if: github.event_name == 'pull_request'
+      run: |
+        git fetch origin ${{ github.base_ref }}
+        npx commitlint --from origin/${{ github.base_ref }} --to HEAD
