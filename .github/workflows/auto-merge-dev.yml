@@ -1,4 +1,4 @@
-name: Auto Merge to Dev
+name: Auto PR and Merge to Dev
 
 on:
   push:
@@ -6,11 +6,12 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
   actions: read
 
 jobs:
-  auto-merge-dev:
-    name: Auto Merge to Dev
+  auto-pr-and-merge:
+    name: Auto Create PR and Merge to Dev
     runs-on: ubuntu-latest
     if: github.ref != 'refs/heads/dev' && github.ref != 'refs/heads/master'
     
@@ -20,14 +21,55 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: Configure Git
+      - name: Extract branch info
+        id: branch
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           
-      - name: Merge to dev
+      - name: Create Pull Request
+        id: create_pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Auto PR: Merge ${{ steps.branch.outputs.branch_name }} to dev`,
+              head: '${{ steps.branch.outputs.branch_name }}',
+              base: 'dev',
+              body: `Automatically created PR for feature branch: ${{ steps.branch.outputs.branch_name }}
+              
+              This PR will be auto-merged after CI passes.
+              
+              Commit: ${{ github.sha }}`
+            });
+            
+            console.log(`Created PR #${pr.number}: ${pr.html_url}`);
+            return pr.number;
+            
+      - name: Wait for CI to complete
         run: |
-          git fetch origin dev:dev
-          git checkout dev
-          git merge ${{ github.sha }} --no-ff -m "auto-merge ${{ github.ref_name }} to dev"
-          git push origin dev
+          echo "Waiting for CI checks to complete..."
+          sleep 30
+          
+      - name: Auto-merge PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ steps.create_pr.outputs.result }};
+            
+            // Enable auto-merge
+            await github.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              commit_title: `feat: auto-merge ${{ steps.branch.outputs.branch_name }} to dev`,
+              merge_method: 'squash'
+            });
+            
+            console.log(`Auto-merged PR #${prNumber}`);
+            
+      - name: Delete feature branch
+        run: |
+          git push origin --delete ${{ steps.branch.outputs.branch_name }}
