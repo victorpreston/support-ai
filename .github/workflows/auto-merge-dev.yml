@@ -4,6 +4,10 @@ on:
   push:
     branches-ignore: [dev, master]
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   auto-merge-dev:
     name: Auto Merge to Dev
@@ -18,11 +22,12 @@ jobs:
           
       - name: Configure Git
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           
       - name: Merge to dev
         run: |
+          git fetch origin dev:dev
           git checkout dev
-          git merge ${{ github.sha }} --no-ff -m "feat: auto-merge ${{ github.ref_name }} to dev"
+          git merge ${{ github.sha }} --no-ff -m "auto-merge ${{ github.ref_name }} to dev"
           git push origin dev
