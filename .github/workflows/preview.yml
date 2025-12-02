@@ -33,14 +33,20 @@ jobs:
       - name: Build project
         run: pnpm run build
         
-      - name: Deploy to Vercel Preview
-        uses: vercel/action@v1
-        id: vercel-deploy
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+        
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+        
+      - name: Build Project Artifacts
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+        
+      - name: Deploy Project Artifacts to Vercel
+        run: |
+          url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "VERCEL_PREVIEW_URL=$url" >> $GITHUB_ENV
+        
       - name: Comment PR
         uses: actions/github-script@v7
         with:
@@ -49,10 +55,10 @@ jobs:
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `🚀 **Preview Deployment Ready!**
+              body: `Preview Deployment Ready!
               
-              📱 **Preview URL:** ${{ steps.vercel-deploy.outputs.preview-url }}
+              Preview URL: ${{ env.VERCEL_PREVIEW_URL }}
               
-              ✅ Build completed successfully
-              🔍 Please review and test the changes`
+              Build completed successfully
+              Please review and test the changes`
             })

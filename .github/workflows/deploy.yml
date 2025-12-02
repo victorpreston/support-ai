@@ -57,16 +57,14 @@ jobs:
       - name: Build project
         run: pnpm run build
         
-      - name: Deploy to Vercel
-        uses: vercel/action@v1
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'
-          
-      - name: Create deployment comment
-        if: github.event_name == 'push'
-        run: |
-          echo "🚀 Production deployment successful!" >> $GITHUB_STEP_SUMMARY
-          echo "🔗 Live URL: https://your-domain.vercel.app" >> $GITHUB_STEP_SUMMARY
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+        
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        
+      - name: Build Project Artifacts
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        
+      - name: Deploy Project Artifacts to Vercel
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
