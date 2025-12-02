@@ -1,0 +1,39 @@
+name: Auto-merge to Dev
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [closed]
+
+jobs:
+  auto-merge-to-dev:
+    name: Auto-merge to Dev
+    runs-on: ubuntu-latest
+    if: |
+      github.event.pull_request.merged == true &&
+      startsWith(github.head_ref, 'feature/') ||
+      startsWith(github.head_ref, 'fix/') ||
+      startsWith(github.head_ref, 'hotfix/') ||
+      startsWith(github.head_ref, 'chore/')
+      
+    steps:
+      - name: Checkout dev branch
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+      - name: Sync dev with latest
+        run: |
+          git fetch origin
+          git reset --hard origin/dev
+          
+      - name: Confirm merge completed
+        run: |
+          echo "Feature branch ${{ github.head_ref }} successfully merged to dev"
+          echo "Dev branch is now ready for promotion to master"

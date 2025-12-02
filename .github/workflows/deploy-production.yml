@@ -1,0 +1,159 @@
+name: Production Deployment
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '.github/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  pre-deployment:
+    name: Pre-deployment Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    outputs:
+      should-deploy: ${{ steps.check.outputs.should-deploy }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          
+      - name: Check for deployment blockers
+        id: check
+        run: |
+          # Check if commit message contains [skip deploy]
+          if git log -1 --pretty=format:"%s" | grep -q "\[skip deploy\]"; then
+            echo "Deployment skipped due to [skip deploy] flag"
+            echo "should-deploy=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check for critical files
+          if git diff --name-only HEAD~1 | grep -E "package\.json|next\.config\.|vercel\.json"; then
+            echo "Critical configuration files changed"
+          fi
+          
+          echo "Pre-deployment checks passed"
+          echo "should-deploy=true" >> $GITHUB_OUTPUT
+          
+  deploy-production:
+    name: Production Deployment
+    needs: pre-deployment
+    runs-on: ubuntu-latest
+    if: needs.pre-deployment.outputs.should-deploy == 'true'
+    environment:
+      name: production
+      url: ${{ steps.vercel-deploy.outputs.preview-url }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Final test run
+        run: pnpm test
+        
+      - name: Build for production
+        run: pnpm build
+        env:
+          NODE_ENV: production
+          
+      - name: Deploy to Vercel Production
+        id: vercel-deploy
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+          
+      - name: Health check
+        run: |
+          URL="${{ steps.vercel-deploy.outputs.preview-url }}"
+          echo "Performing health check on: $URL"
+          
+          for i in {1..5}; do
+            if curl -f -s "$URL" > /dev/null; then
+              echo "Health check passed on attempt $i"
+              break
+            else
+              echo "Health check failed on attempt $i, retrying..."
+              sleep 10
+            fi
+            
+            if [ $i -eq 5 ]; then
+              echo "Health check failed after 5 attempts"
+              exit 1
+            fi
+          done
+          
+      - name: Post-deployment metrics
+        run: |
+          echo "Deployment Metrics:"
+          echo "Deployed at: $(date)"
+          echo "URL: ${{ steps.vercel-deploy.outputs.preview-url }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+          
+  rollback:
+    name: Rollback Capability
+    needs: [pre-deployment, deploy-production]
+    runs-on: ubuntu-latest
+    if: failure() && needs.pre-deployment.outputs.should-deploy == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 10
+          
+      - name: Initiate rollback
+        run: |
+          echo "Production deployment failed!"
+          echo "Rollback procedure available"
+          echo "Last known good commit: $(git log --oneline -1 --skip=1)"
+          echo "To rollback, revert the failing commit and re-deploy"
+          
+          # In a real scenario, you might automatically rollback here
+          # git revert HEAD --no-edit
+          # git push origin master
+          
+      - name: Notify team
+        run: |
+          echo "DEPLOYMENT FAILED - MANUAL INTERVENTION REQUIRED"
+          echo "Notifications would be sent to the development team"
+          echo "Check logs and consider rollback if necessary"

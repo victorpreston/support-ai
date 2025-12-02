@@ -1,0 +1,149 @@
+name: Preview Deployment
+
+on:
+  pull_request:
+    branches: [dev, master]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [dev]
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-preview:
+    name: Deploy Preview
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/dev'
+    
+    outputs:
+      preview-url: ${{ steps.vercel-deploy.outputs.preview-url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Build for preview
+        run: pnpm build
+        env:
+          NODE_ENV: preview
+          
+      - name: Deploy to Vercel Preview
+        id: vercel-deploy
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+          
+      - name: Comment deployment URL
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('Preview Deployment')
+            );
+            
+            const body = `## Preview Deployment
+            
+            **Preview deployed successfully!**
+            
+            **Preview URL:** ${{ steps.vercel-deploy.outputs.preview-url }}
+            
+            **Details:**
+            - **Commit:** ${context.sha.substring(0, 7)}
+            - **Branch:** \`${context.ref.replace('refs/heads/', '')}\`
+            - **Deployment:** [View on Vercel](${{ steps.vercel-deploy.outputs.preview-url }})
+            
+            ---
+            *This comment will be updated on each push to the PR*`;
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+            
+  lighthouse-check:
+    name: Lighthouse Performance
+    needs: deploy-preview
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Run Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v10
+        with:
+          urls: |
+            ${{ needs.deploy-preview.outputs.preview-url }}
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+          
+      - name: Comment Lighthouse results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            try {
+              const results = JSON.parse(fs.readFileSync('./lhci_reports/manifest.json'));
+              const summary = results[0].summary;
+              
+              const body = `## Lighthouse Performance Report
+              
+              | Metric | Score |
+              |--------|------------|
+              | Performance | ${Math.round(summary.performance * 100)} |
+              | Accessibility | ${Math.round(summary.accessibility * 100)} |
+              | Best Practices | ${Math.round(summary['best-practices'] * 100)} |
+              | SEO | ${Math.round(summary.seo * 100)} |
+              
+              [View detailed report](${results[0].url})`;
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            } catch (error) {
+              console.log('Could not parse Lighthouse results:', error);
+            }
